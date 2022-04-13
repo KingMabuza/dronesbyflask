@@ -77,9 +77,10 @@ def view_deliveries():
         path, runs = finder.find_path(start, end, grid)
         print(path)
 
-        distance = len(path) * 2
+        p_distance = len(path) - 1
+        distance = p_distance * 2
         # add distance
-        all_packages.append({'name': package['name'], 'distance': f"{distance}km"})
+        all_packages.append({'distance': f"{distance}km",'name': package['name']})
     print(all_packages)
     return jsonify({'Drones': all_packages})
 
