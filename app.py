@@ -3,6 +3,9 @@ from pathfinding.core.diagonal_movement import DiagonalMovement
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
 from pymongo import MongoClient
+import uuid
+import time
+import threading
 
 app = Flask(__name__)
 
@@ -13,9 +16,10 @@ drones = db.drones
 packages = db.packages
 
 
-# all drones
+# View Drones
 @app.route('/')
 def view_all_drones():
+
     all_drones = []
 
     for drone in drones.find():
@@ -28,7 +32,7 @@ def view_all_drones():
 def add_drone():
     name = request.json
     for n in name:
-        drones.insert_one({'name': n['name']})
+        drones.insert_one({'name': n['name'], 'fuel': 100, 'status': 'idle'})
     output = "Drone added successfully"
     return jsonify({"result": output})
 
@@ -40,7 +44,8 @@ def add_delivery():
     i = 0
     while i < len(data):
         packages.insert_one(
-            {'name': data[i]['name'], 'weight': data[i]['weight'], 'destination': data[i]['destination']})
+            {'uid': str(uuid.uuid4()), 'name': data[i]['name'], 'weight': data[i]['weight'],
+             'destination': data[i]['destination'], 'status': 'scheduled'})
         i += 1
     output = "Delivery scheduled successfully"
     return jsonify({"result": output})
@@ -79,10 +84,10 @@ def view_deliveries():
 
         p_distance = len(path) - 1
         distance = p_distance * 2
-        # add distance
-        all_packages.append({'distance': f"{distance}km",'name': package['name']})
+
+        all_packages.append({'distance': f"{distance}km", 'name': package['name']})
     print(all_packages)
-    return jsonify({'Drones': all_packages})
+    return jsonify({'Packages': all_packages})
 
 
 # Single Drone
@@ -96,6 +101,83 @@ def view_one_drone(name):
         output = 'No Drone Found'
 
     return jsonify({'Drone': output})
+
+
+# Delivery Status
+@app.route('/delivery/status')
+def delivery_status():
+    return 'hello'
+
+
+@app.route('/assign')
+def assign():
+    all_drones = drones.find({"status": "idle"})
+    all_packages = packages.find({"status": "scheduled"})
+    droned = list(all_drones)
+    packaged = list(all_packages)
+    drone_packages = zip(droned, packaged)
+    dp = list(drone_packages)
+    i = 0
+    while i < len(dp):
+        print(drone_packages)
+        uid = packaged[i]['uid']
+        p_name = packaged[i]['name']
+        d_name = droned[i]['name']
+
+        drones.update_one(
+            {"status": "idle"},
+            {
+                "$set": {"package": packaged[i], "status": "active"},
+            }
+        )
+        packages.update_one({"uid": uid}, {"$set": {"status": "in-transit", "drone": d_name}})
+
+        drones.update_one({"package.name": p_name}, {"$set": {"package.status": "in-transit"}})
+
+        i += 1
+
+    return 'done'
+
+
+@app.route('/check')
+def check():
+    drones.update_one({"package.name": "TV"}, {"$set": {"package.status": "in-transit"}})
+    return 'done'
+
+
+# Assign Packages To Drones
+
+def assigned():
+    while True:
+        idle_drones = drones.find({"status": "idle"})
+        list_packages = packages.find({"status": "scheduled"})
+        droned = list(idle_drones)
+        packaged = list(list_packages)
+        drone_packages = zip(droned, packaged)
+        dp = list(drone_packages)
+        i = 0
+        while i < len(dp):
+            print(drone_packages)
+            uid = packaged[i]['uid']
+            p_name = packaged[i]['name']
+            d_name = droned[i]['name']
+
+            drones.update_one(
+                {"status": "idle"},
+                {
+                    "$set": {"package": packaged[i], "status": "active"},
+                }
+            )
+            packages.update_one({"uid": uid}, {"$set": {"status": "in-transit", "drone": d_name}})
+
+            drones.update_one({"package.name": p_name}, {"$set": {"package.status": "in-transit"}})
+
+            i += 1
+
+        time.sleep(10)
+
+
+threading.Thread(target=assigned).start()
 
 
 if __name__ == '__main__':
