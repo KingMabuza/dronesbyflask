@@ -19,7 +19,6 @@ packages = db.packages
 # View Drones
 @app.route('/')
 def view_all_drones():
-
     all_drones = []
 
     for drone in drones.find():
@@ -103,40 +102,34 @@ def view_one_drone(name):
     return jsonify({'Drone': output})
 
 
-# Delivery Status
-@app.route('/delivery/status')
-def delivery_status():
-    return 'hello'
+# @app.route('/assign')
+# def assign():
+#    all_drones = drones.find({"status": "idle"})
+#    all_packages = packages.find({"status": "scheduled"})
+#    droned = list(all_drones)
+#    packaged = list(all_packages)
+#    drone_packages = zip(droned, packaged)
+#    dp = list(drone_packages)
+#    i = 0
+#    while i < len(dp):
+#        print(drone_packages)
+#        uid = packaged[i]['uid']
+#        p_name = packaged[i]['name']
+#        d_name = droned[i]['name']
 
+#        drones.update_one(
+#            {"status": "idle"},
+#            {
+#                "$set": {"package": packaged[i], "status": "active"},
+#            }
+#        )
+#        packages.update_one({"uid": uid}, {"$set": {"status": "in-transit", "drone": d_name}})
 
-@app.route('/assign')
-def assign():
-    all_drones = drones.find({"status": "idle"})
-    all_packages = packages.find({"status": "scheduled"})
-    droned = list(all_drones)
-    packaged = list(all_packages)
-    drone_packages = zip(droned, packaged)
-    dp = list(drone_packages)
-    i = 0
-    while i < len(dp):
-        print(drone_packages)
-        uid = packaged[i]['uid']
-        p_name = packaged[i]['name']
-        d_name = droned[i]['name']
+#        drones.update_one({"package.name": p_name}, {"$set": {"package.status": "in-transit"}})
 
-        drones.update_one(
-            {"status": "idle"},
-            {
-                "$set": {"package": packaged[i], "status": "active"},
-            }
-        )
-        packages.update_one({"uid": uid}, {"$set": {"status": "in-transit", "drone": d_name}})
+#        i += 1
 
-        drones.update_one({"package.name": p_name}, {"$set": {"package.status": "in-transit"}})
-
-        i += 1
-
-    return 'done'
+#    return 'done'
 
 
 @app.route('/check')
@@ -145,8 +138,15 @@ def check():
     return 'done'
 
 
-# Assign Packages To Drones
+@app.route('/status')
+def dev_status():
+    packing = []
 
+    for package in packages.find():
+        print(package['drone'])
+    return 'done'
+
+# Assign Packages To Drones
 def assigned():
     while True:
         idle_drones = drones.find({"status": "idle"})
@@ -177,8 +177,53 @@ def assigned():
         time.sleep(10)
 
 
-threading.Thread(target=assigned).start()
+#   change package status
+def package_status():
+    while True:
+        for pack in packages.find({"status": "in-transit"}):
+            matrix = [
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+            ]
 
+            grid = Grid(matrix=matrix)
+
+            start = grid.node(0, 0)
+
+            x = pack['destination'][0]
+            y = pack['destination'][1]
+            end = grid.node(x, y)
+            finder = AStarFinder(diagonal_movement=DiagonalMovement.always)
+            path, runs = finder.find_path(start, end, grid)
+
+            p_distance = len(path) - 1
+            distance = p_distance * 2
+
+            in_speed = 80
+            weight = pack['weight']
+            numbers = ''.join(filter(lambda n: n.isdigit(), weight))
+            number = int(numbers)
+            travel_speed = in_speed - number * 2
+            ta = distance / travel_speed
+            eta = ta * 60
+            eta_secs = eta * 60
+            time.sleep(eta_secs)
+            packages.update_one({"name": pack['name']}, {"$set": {"status": "delivered"}})
+            drones.update_one({"package.name": pack['name']}, {"$unset": {"package": ""}})
+            drones.update_one({"status": "active"}, {"$set": {"status": "idle"}})
+
+
+threading.Thread(target=assigned).start()
+threading.Thread(target=package_status).start()
 
 if __name__ == '__main__':
     app.run()
